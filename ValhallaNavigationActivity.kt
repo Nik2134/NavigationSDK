@@ -92,6 +92,13 @@ class ValhallaNavigationActivity :
     // Add these variables to your class
     private var remainingDistance: Double = 0.0
     private var totalDistance: Double = 0.0
+    private var entireRoutePoints: List<Point> = emptyList()
+    private var upcomingRoutePoints: List<Point> = emptyList()
+
+    companion object {
+        private const val INITIAL_ZOOM_LEVEL = 12.0
+        private const val NAVIGATION_ZOOM_LEVEL = 17.0
+    }
 
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -180,7 +187,7 @@ class ValhallaNavigationActivity :
                     navigation.startNavigation(route)
 
                     if (::mapLibreMap.isInitialized) {
-                        moveCameraToLastKnownLocationOrWait()
+                        moveCameraToLastKnownLocationOrWait(NAVIGATION_ZOOM_LEVEL)
                         Timber.i("Camera animation started")
                         mapLibreMap.removeOnMapClickListener(this)
                     }
@@ -262,6 +269,16 @@ class ValhallaNavigationActivity :
 
                 )
 
+                // Traffic layer should be above upcoming but below markers
+                style.addLayerAbove(
+                    LineLayer(trafficLayerId, trafficSourceId).withProperties(
+                        lineWidth(6f),
+                        lineOpacity(0.8f)
+                    ),
+                    "upcoming-layer"
+                )
+
+
                 // ✅ Marker source
                 if (style.getSource("marker-source") == null) {
                     style.addSource(GeoJsonSource("marker-source"))
@@ -287,6 +304,9 @@ class ValhallaNavigationActivity :
                 prepareTrafficLayer(style)
 
                 enableLocationComponent(style)
+                // Set initial zoom level
+                moveCameraToLastKnownLocationOrWait(INITIAL_ZOOM_LEVEL)
+
 
                 mapLibreMap.setPadding(0, 1000, 0, 50) // bottom padding pushes the arrow up
 
@@ -319,20 +339,20 @@ class ValhallaNavigationActivity :
                 LocationComponentActivationOptions.builder(this, style).build()
             )
             it.isLocationComponentEnabled = true
-            it.cameraMode = CameraMode.TRACKING_GPS
+            it.cameraMode = CameraMode.NONE
             it.renderMode = RenderMode.GPS
+
 
             // ✅  recenter button logic
             binding.recenterButton.setOnClickListener {
-                locationComponent?.let {
-                    it.activateLocationComponent(
-                        LocationComponentActivationOptions.builder(this, style).build()
-                    )
-                    mapLibreMap.locationComponent.cameraMode = CameraMode.TRACKING_GPS
-                    mapLibreMap.locationComponent.renderMode = RenderMode.GPS
-                    hideRecenterButton()
-                }
+                // Use appropriate zoom level based on navigation state
+                val zoomLevel = if (isNavigationRunning) NAVIGATION_ZOOM_LEVEL else INITIAL_ZOOM_LEVEL
+                mapLibreMap.setPadding(0, 1000, 0, 50)
+                locationComponent?.cameraMode = CameraMode.TRACKING_GPS
+                moveCameraToLastKnownLocationOrWait(zoomLevel)
+                hideRecenterButton()
             }
+
 
             // ✅ Use Navigation SDK engine, not the Maps engine
             val navEngine = org.maplibre.navigation.core.location.engine.LocationEngineProvider
@@ -345,15 +365,17 @@ class ValhallaNavigationActivity :
                 println("Last known location at camera move: $loc")
 
                 if (loc != null) {
+                    val zoomLevel = if (isNavigationRunning) NAVIGATION_ZOOM_LEVEL else INITIAL_ZOOM_LEVEL
                     val cameraPosition = CameraPosition.Builder()
-                        .target(LatLng(loc.latitude, loc.longitude))
-                        .zoom(15.0)
-                        .build()
+                    .target(LatLng(loc.latitude, loc.longitude))
+                    .zoom(zoomLevel)
+                    .build()
                     mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
                     Timber.i(
-                        "Camera moved to current location: %s, %s",
-                        loc.latitude, loc.longitude
+                        "Camera moved to current location: %s, %s with zoom %f",
+                        loc.latitude, loc.longitude, zoomLevel
                     )
+
                 } else {
                     Timber.w("LocationComponent: lastKnownLocation is still null")
                 }
@@ -463,6 +485,8 @@ class ValhallaNavigationActivity :
                                 // Update ETA display
                                 updateEtaDisplay()
                                 val fullLine = LineString.fromPolyline(encodedGeometry, 6)
+                                entireRoutePoints = fullLine.coordinates() // Store the entire route points
+
 
                                 runOnUiThread {
                                     mapLibreMap.style?.getSourceAs<GeoJsonSource>("overall-route-source")
@@ -485,8 +509,9 @@ class ValhallaNavigationActivity :
             Timber.e(e, "Error in calculateRoute")
         }
     }
+    
 
-    private fun moveCameraToLastKnownLocationOrWait(maxRetries: Int = 8, delayMs: Long = 700) {
+    private fun moveCameraToLastKnownLocationOrWait(zoomLevel: Double = INITIAL_ZOOM_LEVEL, maxRetries: Int = 8, delayMs: Long = 700)  {
         var attempts = 0
         fun tryMove() {
             try {
@@ -497,20 +522,27 @@ class ValhallaNavigationActivity :
                 if (loc != null) {
                     val cameraPosition = CameraPosition.Builder()
                         .target(LatLng(loc.latitude, loc.longitude))
-                        .zoom(17.0)
+                        .zoom(zoomLevel)
                         .bearing(loc.bearing.toDouble())      // orient in direction of travel
                         .tilt(45.0)
                         .build()
 
                     mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
-                    Timber.i("Camera moved to ${loc.latitude}, ${loc.longitude}")
-                    println("Camera moved to ${loc.latitude}, ${loc.longitude}")
+                    mapLibreMap.locationComponent.cameraMode = CameraMode.TRACKING_GPS
+                    mapLibreMap.locationComponent.renderMode = RenderMode.GPS
+
+                    mapLibreMap.setPadding(0, 1000, 0, 0) // 400px from top, tweak value
+
+
+                    Timber.i("Camera moved to ${loc.latitude}, ${loc.longitude} with zoom $zoomLevel")
+                    println("Camera moved to ${loc.latitude}, ${loc.longitude} with zoom $zoomLevel")
+
 
                     // ✅ Enable continuous tracking after first move
-                    val locationComponent = mapLibreMap.locationComponent
-                    locationComponent.isLocationComponentEnabled = true
-                    locationComponent.cameraMode = CameraMode.TRACKING
-                    locationComponent.renderMode = RenderMode.GPS
+//                    val locationComponent = mapLibreMap.locationComponent
+//                    locationComponent.isLocationComponentEnabled = true
+//                    locationComponent.cameraMode = CameraMode.TRACKING
+//                    locationComponent.renderMode = RenderMode.GPS
 
 
                 } else {
@@ -533,11 +565,7 @@ class ValhallaNavigationActivity :
 
     // ProgressChangeListener implementation
     override fun onProgressChange(location: Location, routeProgress: RouteProgress) {
-//        Timber.i(
-//            "Progress changed: ${routeProgress.currentLegProgress?.currentStepProgress?.distanceRemaining} meters to next step"
-//        )
 
-        // Force an off-route condition for testing
         if (simulateRoute && !isSimulatingOffRoute && isNavigationRunning) {
             isSimulatingOffRoute = true
             Handler(Looper.getMainLooper()).postDelayed({
@@ -560,6 +588,20 @@ class ValhallaNavigationActivity :
 
         updateRouteLine(location)
         updateNavigationUI()
+
+        // Keep the camera updated with the current location during navigation
+        if (isNavigationRunning && locationComponent?.cameraMode == CameraMode.TRACKING_GPS) {
+            runOnUiThread {
+                val position = CameraPosition.Builder()
+                    .target(LatLng(location.latitude, location.longitude))
+                    .zoom(NAVIGATION_ZOOM_LEVEL)
+                    .bearing(location.bearing?.toDouble() ?: 0.0)
+                    .tilt(45.0)
+                    .build()
+                mapLibreMap.easeCamera(CameraUpdateFactory.newCameraPosition(position), 1000)
+            }
+        }
+
 
         // Update ETA periodically or when significant changes occur
         val currentTime = System.currentTimeMillis()
@@ -611,21 +653,28 @@ class ValhallaNavigationActivity :
                 binding.startRouteLayout.visibility = View.GONE
                 binding.simulateRouteSwitch.visibility = View.GONE
 
-                // Keep camera tracking north
-                val navigationCamera = CameraPosition.Builder()
-                    .target(mapLibreMap.locationComponent.lastKnownLocation?.let {
-                        LatLng(it.latitude, it.longitude)
-                    })
-                    .zoom(17.5)      // closer zoom like Google Maps driving
-                    .tilt(45.0)      // 3D angle
-                    .bearing(0.0)    // keep north-up (set to it.bearing if you want route-up)
-                    .build()
-
-                mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(navigationCamera))
                 mapLibreMap.locationComponent.cameraMode = CameraMode.TRACKING_GPS
-                mapLibreMap.locationComponent.renderMode = RenderMode.GPS
+                locationComponent?.renderMode = RenderMode.GPS
 
-                mapLibreMap.setPadding(0, 1000, 0, 0) // 400px from top, tweak value
+                mapLibreMap.setPadding(0, 1000, 0, 50)
+
+                // Use navigation zoom level
+                moveCameraToLastKnownLocationOrWait(NAVIGATION_ZOOM_LEVEL)
+
+                // // Keep camera tracking north
+                // val navigationCamera = CameraPosition.Builder()
+                //     .target(mapLibreMap.locationComponent.lastKnownLocation?.let {
+                //         LatLng(it.latitude, it.longitude)
+                //     })
+                //     .zoom(17.5)      // closer zoom like Google Maps driving
+                //     .tilt(45.0)      // 3D angle
+                //     .bearing(0.0)    // keep north-up (set to it.bearing if you want route-up)
+                //     .build()
+
+                // mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(navigationCamera))
+
+
+//                mapLibreMap.setPadding(0, 1000, 0, 0) // 400px from top, tweak value
 
 
                 // Detect when user moves map manually
@@ -636,6 +685,7 @@ class ValhallaNavigationActivity :
                             mapLibreMap.locationComponent.cameraMode = CameraMode.NONE
 
                             showRecenterButton()
+                            
                         }
                         MapLibreMap.OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION,
                         MapLibreMap.OnCameraMoveStartedListener.REASON_API_ANIMATION -> {
@@ -651,6 +701,10 @@ class ValhallaNavigationActivity :
                 binding.startRouteLayout.visibility = View.VISIBLE
                 binding.simulateRouteSwitch.visibility = View.VISIBLE
 
+                mapLibreMap.setPadding(0, 0, 0, 0)
+
+                // Reset to initial zoom when navigation stops
+                moveCameraToLastKnownLocationOrWait(INITIAL_ZOOM_LEVEL)
 
             }
         }
@@ -788,8 +842,16 @@ class ValhallaNavigationActivity :
                             remainingDistance = totalDistance
 
                             this@ValhallaNavigationActivity.route = assignedRoute
+                            // Store the entire route points for the new route
+                            val encodedGeometry = assignedRoute.geometry
+                            if (!encodedGeometry.isNullOrEmpty()) {
+                                val fullLine = LineString.fromPolyline(encodedGeometry, 6)
+                                entireRoutePoints = fullLine.coordinates()
+                            }
+
                             // Immediately fetch traffic for this new route
-                              fetchTrafficDataFromGenesys()
+                            refreshTrafficData()
+
                             runOnUiThread {
                                 navigationMapRoute?.removeRoute()
                                 navigationMapRoute?.addRoutes(maplibreResponse.routes)
@@ -815,6 +877,9 @@ class ValhallaNavigationActivity :
     override fun onDestroy() {
         super.onDestroy()
         stopTrafficUpdates()
+        trafficUpdateHandler?.removeCallbacksAndMessages(null)
+        trafficUpdateHandler = null
+
 
         // Remove all navigation listeners to prevent memory leaks
         navigation.apply {
@@ -895,12 +960,11 @@ class ValhallaNavigationActivity :
         if (route == null || !::mapLibreMap.isInitialized) return
 
         val style = mapLibreMap.style ?: return
-        // geometry is a String (encoded polyline), not a function call
+        // Check if geometry is available
         val encodedGeometry = route!!.geometry
 
         // Decode the polyline into a LineString
         val lineString = LineString.fromPolyline(encodedGeometry, 6)
-
         val allPoints = lineString.coordinates()
 
         // Current GPS point
@@ -918,15 +982,24 @@ class ValhallaNavigationActivity :
         }
 
         // Split route
-        val traveledPoints = allPoints.subList(0, splitIndex)
-        val upcomingPoints = allPoints.subList(splitIndex, allPoints.size)
+        val traveledPoints = allPoints.subList(0, splitIndex+1)
+        upcomingRoutePoints = allPoints.subList(splitIndex, allPoints.size) // Store upcoming points
+
 
         // Update sources
         val traveledSource = style.getSourceAs<GeoJsonSource>("traveled-source")
         traveledSource?.setGeoJson(LineString.fromLngLats(traveledPoints))
 
         val upcomingSource = style.getSourceAs<GeoJsonSource>("upcoming-source")
-        upcomingSource?.setGeoJson(LineString.fromLngLats(upcomingPoints))
+        upcomingSource?.setGeoJson(LineString.fromLngLats(upcomingRoutePoints))
+        // Update remaining distance for ETA calculation
+        remainingDistance = calculateRemainingDistance(upcomingRoutePoints)
+
+        // Update traffic layer with filtered data (only upcoming route)
+        if (trafficLayerAdded) {
+            refreshTrafficData()
+        }
+
     }
 
     private fun prepareTrafficLayer(style: Style) {
@@ -973,7 +1046,7 @@ class ValhallaNavigationActivity :
                     trafficLayerAdded = true
 
                     // Fetch initial traffic data
-                    fetchTrafficDataFromGenesys()
+                    refreshTrafficData()
                     startTrafficUpdates()
 
                     Timber.i("HERE traffic layer added and visible")
@@ -1006,11 +1079,9 @@ class ValhallaNavigationActivity :
     private fun startTrafficUpdates() {
         stopTrafficUpdates() // Ensure no previous runnables are running
 
-        trafficUpdateRunnable = object : Runnable {
-            override fun run() {
-                fetchTrafficDataFromGenesys()
-                trafficUpdateHandler?.postDelayed(this, trafficUpdateInterval)
-            }
+        trafficUpdateRunnable = Runnable {
+            refreshTrafficData()
+            trafficUpdateHandler?.postDelayed(trafficUpdateRunnable!!, trafficUpdateInterval)
         }
 
         trafficUpdateHandler?.postDelayed(trafficUpdateRunnable!!, trafficUpdateInterval)
@@ -1167,8 +1238,41 @@ class ValhallaNavigationActivity :
 
     private fun updateTrafficLayer(featureCollection: FeatureCollection) {
         mapLibreMap.style?.let { style ->
+
+            // Filter traffic features to only those that intersect with upcoming route
+            val pointsToUse = if (upcomingRoutePoints.isNotEmpty()) upcomingRoutePoints else entireRoutePoints
+
+            // If we have no points to filter with, show all traffic
+            if (pointsToUse.isEmpty()) {
+                val trafficSource = style.getSourceAs<GeoJsonSource>(trafficSourceId)
+                trafficSource?.setGeoJson(featureCollection)
+                return
+            }
+
+
+            // Filter traffic features to only those that intersect with upcoming route
+            val filteredFeatures = featureCollection.features()?.filter { feature ->
+                val geometry = feature.geometry()
+                if (geometry is LineString) {
+                    geometry.coordinates().any { trafficPoint ->
+                        upcomingRoutePoints.any { routePoint ->
+                            TurfMeasurement.distance(
+                                trafficPoint,
+                                routePoint,
+                                TurfConstants.UNIT_METERS
+                            ) < 50 // Adjust tolerance as needed
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
+
+            val filteredCollection = FeatureCollection.fromFeatures(filteredFeatures ?: emptyList())
+
+
             val trafficSource = style.getSourceAs<GeoJsonSource>(trafficSourceId)
-            trafficSource?.setGeoJson(featureCollection)
+            trafficSource?.setGeoJson(filteredCollection)
 
             val trafficLayer = style.getLayerAs<LineLayer>(trafficLayerId)
             trafficLayer?.setProperties(
@@ -1280,6 +1384,18 @@ class ValhallaNavigationActivity :
                 binding.etaTextView.visibility = View.GONE
             }
         }
+    }
+
+    private fun calculateRemainingDistance(points: List<Point>): Double {
+        var distance = 0.0
+        for (i in 0 until points.size - 1) {
+            distance += TurfMeasurement.distance(
+                points[i],
+                points[i + 1],
+                TurfConstants.UNIT_METERS
+            )
+        }
+        return distance
     }
 
 }
