@@ -76,7 +76,7 @@ class ValhallaNavigationActivity :
     private val BEGIN_ROUTE_MILESTONE = 1001
     private var isSimulatingOffRoute = false
 
-        // Traffic layer variables
+    // Traffic layer variables
     private var trafficLayerAdded = false
     private val trafficSourceId = "here-traffic-source"
     private val trafficLayerId = "here-traffic-layer"
@@ -97,7 +97,7 @@ class ValhallaNavigationActivity :
 
     companion object {
         private const val INITIAL_ZOOM_LEVEL = 12.0
-        private const val NAVIGATION_ZOOM_LEVEL = 17.0
+        private const val NAVIGATION_ZOOM_LEVEL = 16.0
     }
 
     @SuppressLint("MissingPermission")
@@ -367,9 +367,9 @@ class ValhallaNavigationActivity :
                 if (loc != null) {
                     val zoomLevel = if (isNavigationRunning) NAVIGATION_ZOOM_LEVEL else INITIAL_ZOOM_LEVEL
                     val cameraPosition = CameraPosition.Builder()
-                    .target(LatLng(loc.latitude, loc.longitude))
-                    .zoom(zoomLevel)
-                    .build()
+                        .target(LatLng(loc.latitude, loc.longitude))
+                        .zoom(zoomLevel)
+                        .build()
                     mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
                     Timber.i(
                         "Camera moved to current location: %s, %s with zoom %f",
@@ -509,7 +509,7 @@ class ValhallaNavigationActivity :
             Timber.e(e, "Error in calculateRoute")
         }
     }
-    
+
 
     private fun moveCameraToLastKnownLocationOrWait(zoomLevel: Double = INITIAL_ZOOM_LEVEL, maxRetries: Int = 8, delayMs: Long = 700)  {
         var attempts = 0
@@ -590,7 +590,7 @@ class ValhallaNavigationActivity :
         updateNavigationUI()
 
         // Keep the camera updated with the current location during navigation
-        if (isNavigationRunning && locationComponent?.cameraMode == CameraMode.TRACKING_GPS) {
+        if (isNavigationRunning ) {
             runOnUiThread {
                 val position = CameraPosition.Builder()
                     .target(LatLng(location.latitude, location.longitude))
@@ -609,8 +609,8 @@ class ValhallaNavigationActivity :
             // Calculate remaining time based on progress
             val remainingDistance = routeProgress.distanceRemaining
 
-                 val lastLocation: Location? = null
-                 val lastLocationTime: Long = 0
+            val lastLocation: Location? = null
+            val lastLocationTime: Long = 0
 
             val currentSpeed = if (lastLocation != null && lastLocationTime > 0) {
                 val timeDelta = (System.currentTimeMillis() - lastLocationTime) / 1000.0 // seconds
@@ -685,7 +685,7 @@ class ValhallaNavigationActivity :
                             mapLibreMap.locationComponent.cameraMode = CameraMode.NONE
 
                             showRecenterButton()
-                            
+
                         }
                         MapLibreMap.OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION,
                         MapLibreMap.OnCameraMoveStartedListener.REASON_API_ANIMATION -> {
@@ -1053,7 +1053,7 @@ class ValhallaNavigationActivity :
                 } else {
                     Timber.e("Traffic layer not found in style")
                 }
-        } catch (e: Exception) {
+            } catch (e: Exception) {
                 Timber.e(e, "Error adding HERE traffic layer")
             }
         }
@@ -1348,39 +1348,39 @@ class ValhallaNavigationActivity :
 
                 binding.etaTextView.visibility = View.VISIBLE
             } else if (baseEta > 0) {
-            // Calculate arrival time
-            val calendar = Calendar.getInstance()
-            calendar.add(Calendar.SECOND, baseEta.toInt())
-            val arrivalTime = SimpleDateFormat("h:mm a", Locale.getDefault()).format(calendar.time)
+                // Calculate arrival time
+                val calendar = Calendar.getInstance()
+                calendar.add(Calendar.SECOND, baseEta.toInt())
+                val arrivalTime = SimpleDateFormat("h:mm a", Locale.getDefault()).format(calendar.time)
 
-            // Format distance
-            val formattedDistance = if (remainingDistance < 1000) {
-                String.format(Locale.getDefault(), "%.0f m", remainingDistance)
-            } else {
-                String.format(Locale.getDefault(), "%.1f km", remainingDistance / 1000)
-            }
+                // Format distance
+                val formattedDistance = if (remainingDistance < 1000) {
+                    String.format(Locale.getDefault(), "%.0f m", remainingDistance)
+                } else {
+                    String.format(Locale.getDefault(), "%.1f km", remainingDistance / 1000)
+                }
 
-            // Format time remaining
-            val hours = (baseEta / 3600).toInt()
-            val minutes = ((baseEta % 3600) / 60).toInt()
+                // Format time remaining
+                val hours = (baseEta / 3600).toInt()
+                val minutes = ((baseEta % 3600) / 60).toInt()
 
-            val timeRemaining = if (hours > 0) {
-                String.format(Locale.getDefault(), "%dh %dm", hours, minutes)
-            } else {
-                String.format(Locale.getDefault(), "%dm", minutes)
-            }
+                val timeRemaining = if (hours > 0) {
+                    String.format(Locale.getDefault(), "%dh %dm", hours, minutes)
+                } else {
+                    String.format(Locale.getDefault(), "%dm", minutes)
+                }
 
-            // Update ETA text view
-            binding.etaTextView.text = String.format(
-                Locale.getDefault(),
-                "ETA: %s (%s away)\n%s remaining",
-                arrivalTime,
-                formattedDistance,
-                timeRemaining
-            )
-            binding.etaTextView.visibility = View.VISIBLE
-        } else
-                 {
+                // Update ETA text view
+                binding.etaTextView.text = String.format(
+                    Locale.getDefault(),
+                    "ETA: %s (%s away)\n%s remaining",
+                    arrivalTime,
+                    formattedDistance,
+                    timeRemaining
+                )
+                binding.etaTextView.visibility = View.VISIBLE
+            } else
+            {
                 binding.etaTextView.visibility = View.GONE
             }
         }
@@ -1399,4 +1399,3 @@ class ValhallaNavigationActivity :
     }
 
 }
-
